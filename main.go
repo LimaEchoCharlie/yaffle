@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"text/template"
 
 	"github.com/google/uuid"
+	"github.com/manifoldco/promptui"
 	"gitlab.com/rainbird-ai/sdk-go"
 )
 
@@ -14,69 +14,48 @@ const (
 )
 
 var (
-	questionsTemplate = template.Must(template.New("questions").
-				Parse(`{{.Prompt}}{{range $i, $c := .Concepts}}
-{{"\t"}}{{$i}}{{"\t"}}{{$c.Value}}{{end}}{{if .CanAdd}}
-{{"\t"}}{{len .Concepts}}{{"\t"}}Other{{end}}
-`))
 	answersTemplate = template.Must(template.New("answers").
-			Parse(`{{range .}}{{.Subject}} {{.Relationship}} {{.Object}} ({{.Certainty}} certainty){{end}}`))
+		Parse(`{{range .}}{{.Subject}} {{.Relationship}} {{.Object}} ({{.Certainty}} certainty){{end}}`))
 )
-
-// readInteger reads an integer from standard input
-// returns an error if the value is not parsed as an integer or if the integer is outside of the bounds
-func readInteger(l, u int) (int, error) {
-	var i int
-	_, err := fmt.Scanf("%d", &i)
-	if err != nil {
-		return i, err
-	}
-	if i < l || i > u {
-		err = fmt.Errorf("integer not between %v and %v", l, u)
-	}
-	return i, err
-}
 
 // askForObject asks the user a question to find out the object value
 // restricts the user to a single answer
+// prohibits the user from skipping the question
 func askForObject(question *sdk.Question) (sdk.QAnswer, error) {
 	answer := sdk.QAnswer{
 		Subject:      question.Subject,
 		Relationship: question.Relationship,
+		CF:           "100",
 	}
 
-	// display Rainbird's question
-	err := questionsTemplate.Execute(os.Stdout, question)
-	if err != nil {
-		return answer, err
+	items := make([]string, 0, len(question.Concepts))
+	for _, v := range question.Concepts {
+		if v, ok := v.Value.(string); ok {
+			items = append(items, v)
+		}
 	}
 
-	// get option from user
-	n := len(question.Concepts) - 1
+	var err error
+
+	// display Rainbird's question and get an answer from the user
 	if question.CanAdd {
-		n++
-	}
-	var i int
-	for {
-		i, err = readInteger(0, n)
-		if err == nil {
-			break
+		prompt := promptui.SelectWithAdd{
+			Label:    question.Prompt,
+			Items:    items,
+			AddLabel: "Other",
 		}
-		fmt.Println(err)
-	}
-	if question.CanAdd && i == n {
-		// ask for user supplied answer
-		fmt.Print("Please enter: ")
-		fmt.Scanln(&answer.Object)
+
+		_, answer.Object, err = prompt.Run()
 	} else {
-		var ok bool
-		answer.Object, ok = question.Concepts[i].Value.(string)
-		if !ok {
-			return answer, fmt.Errorf("answer suggestion is not a string")
+		prompt := promptui.Select{
+			Label: question.Prompt,
+			Items: items,
 		}
+
+		_, answer.Object, err = prompt.Run()
 	}
-	answer.CF = "100"
-	return answer, nil
+
+	return answer, err
 }
 
 // makeDecision completes a single decision tree
