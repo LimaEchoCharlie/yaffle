@@ -35,25 +35,28 @@ func askForObject(question *sdk.Question) (sdk.QAnswer, error) {
 		}
 	}
 
-	var err error
 
-	// display Rainbird's question and get an answer from the user
+	var err error
+	var prompt interface{
+		Run() (int, string, error)
+	}
+
+	// switch prompt dependent on whether user is allowed to add custom answer
 	if question.CanAdd {
-		prompt := promptui.SelectWithAdd{
+		prompt = &promptui.SelectWithAdd{
 			Label:    question.Prompt,
 			Items:    items,
 			AddLabel: "Other",
 		}
-
-		_, answer.Object, err = prompt.Run()
 	} else {
-		prompt := promptui.Select{
+		prompt = &promptui.Select{
 			Label: question.Prompt,
 			Items: items,
 		}
-
-		_, answer.Object, err = prompt.Run()
 	}
+
+	// display Rainbird's question and get an answer from the user
+	_, answer.Object, err = prompt.Run()
 
 	return answer, err
 }
